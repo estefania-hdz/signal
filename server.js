@@ -55,6 +55,11 @@ app.get("/api/status", (req, res) => {
     ),
     queueConfigured: isQueueConfigured(),
     usingQueueForRuns: shouldUseQueue(),
+    // Temporary debug fields — safe (URL isn't secret; token shows only a
+    // short prefix, not enough to reconstruct it). Remove once QStash works.
+    qstashUrl: process.env.QSTASH_URL || null,
+    qstashTokenPrefix: process.env.QSTASH_TOKEN?.slice(0, 12) || null,
+    qstashTokenLength: process.env.QSTASH_TOKEN?.length || 0,
   });
 });
 
