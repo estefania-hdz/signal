@@ -9,7 +9,13 @@ function getClient() {
   return client;
 }
 
-const MODEL = "claude-opus-4-8";
+// Research (search + filter) uses Sonnet: noticeably faster than Opus for
+// this kind of tool-heavy, round-trip-bound work, which matters because
+// Vercel's free tier kills a function after 60s. Drafting (the actual
+// editorial judgment/writing) stays on Opus — it's fast regardless of model
+// since it makes no tool calls, so there's no reason to trade quality there.
+const RESEARCH_MODEL = "claude-sonnet-5";
+const DRAFT_MODEL = "claude-opus-4-8";
 
 const SIGNAL_LABELS = {
   product_launches: "new product launches",
@@ -129,7 +135,7 @@ function buildMockResult(user) {
  */
 export async function runResearchPhase(user) {
   const researchParams = {
-    model: MODEL,
+    model: RESEARCH_MODEL,
     max_tokens: 4000,
     system: buildResearchSystemPrompt(user),
     thinking: { type: "adaptive" },
@@ -198,7 +204,7 @@ export async function runResearchPhase(user) {
  */
 export async function runDraftPhase(user, findingsText) {
   const draftResponse = await streamToFinalMessage({
-    model: MODEL,
+    model: DRAFT_MODEL,
     max_tokens: 4000,
     system: DRAFTING_SYSTEM_PROMPT,
     output_config: {
