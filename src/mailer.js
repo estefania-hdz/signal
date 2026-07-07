@@ -63,3 +63,29 @@ export async function sendSignupNotification({ ownerEmail, signup }) {
 
   return data;
 }
+
+/**
+ * Sends the one-click confirmation link a new subscriber needs to click
+ * before Signal will run a scan for them — keeps random/typo'd emails and
+ * spammed "run now" clicks from spending real API credit.
+ */
+export async function sendConfirmationEmail({ to, confirmUrl }) {
+  const { data, error } = await getClient().emails.send({
+    from: "Signal <onboarding@resend.dev>",
+    to,
+    subject: "Confirm your Signal subscription",
+    html: `<div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 480px; padding: 16px; color: #1c1b18;">
+      <p style="font-size: 15px; line-height: 1.6;">One click and your watch is live.</p>
+      <p style="margin: 20px 0;">
+        <a href="${confirmUrl}" style="display: inline-block; background: #1F6F63; color: #fff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">Confirm my email</a>
+      </p>
+      <p style="font-size: 13px; color: #6B6656;">If you didn't sign up for Signal, you can safely ignore this — nothing runs until this link is clicked.</p>
+    </div>`,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Resend failed to send the confirmation email");
+  }
+
+  return data;
+}

@@ -2,11 +2,17 @@ import "dotenv/config";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { upsertUser, getUserByEmail } from "./src/store.js";
+import {
+  upsertUser,
+  getUserByEmail,
+  createConfirmationToken,
+  confirmEmailByToken,
+} from "./src/store.js";
 import { runAgentForUser } from "./src/agent.js";
 import {
   sendSignalEmail,
   sendSignupNotification,
+  sendConfirmationEmail,
   isEmailSendingConfigured,
 } from "./src/mailer.js";
 
@@ -50,11 +56,37 @@ app.post("/api/signup", async (req, res) => {
       }
     }
 
+    if (isEmailSendingConfigured() && !user.confirmed) {
+      try {
+        const token = await createConfirmationToken(user.email);
+        const confirmUrl = `${req.protocol}://${req.get("host")}/api/confirm?token=${token}`;
+        await sendConfirmationEmail({ to: user.email, confirmUrl });
+        console.log(`[mailer] confirmation email sent for ${user.email}`);
+      } catch (err) {
+        console.error("[mailer] confirmation email failed:", err);
+      }
+    }
+
     res.json({ ok: true, user });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Something went wrong saving your signup." });
   }
+});
+
+app.get("/api/confirm", async (req, res) => {
+  const { token } = req.query;
+  const user = token ? await confirmEmailByToken(token) : null;
+
+  res
+    .status(user ? 200 : 400)
+    .send(
+      `<!DOCTYPE html><html><body style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 80px auto; text-align: center; color: #1c1b18;">${
+        user
+          ? `<h1 style="font-size: 20px;">You're confirmed.</h1><p>Signal will run for ${user.email} whenever you click "Run now."</p>`
+          : `<h1 style="font-size: 20px;">That link didn't work.</h1><p>It may have expired (links are valid 24h) or already been used. Sign up again to get a fresh one.</p>`
+      }</body></html>`
+    );
 });
 
 app.post("/api/run", async (req, res) => {
@@ -64,6 +96,12 @@ app.post("/api/run", async (req, res) => {
 
     const user = await getUserByEmail(email);
     if (!user) return res.status(404).json({ error: "No signup found for that email yet." });
+
+    if (isEmailSendingConfigured() && !user.confirmed) {
+      return res
+        .status(403)
+        .json({ error: "Please confirm your email first — check your inbox for the link." });
+    }
 
     console.log(`[agent] running scan for ${user.email} (${user.industry})...`);
     const result = await runAgentForUser(user);

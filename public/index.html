@@ -501,7 +501,7 @@
       if (!res.ok) throw new Error(data.error || 'Signup failed');
 
       currentEmail = email;
-      signupStatus.textContent = "You're set. Signal will watch " + industry + ".";
+      signupStatus.textContent = "You're set. Signal will watch " + industry + ". Check your inbox and click the confirmation link before running a scan.";
       signupStatus.className = 'status ok';
       runArea.classList.add('visible');
       previewWrap.classList.remove('visible');

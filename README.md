@@ -16,6 +16,7 @@ Most "AI newsletter" tools just forward everything they find. The interesting pr
    - **Research**: Claude searches the web (server-side `web_search` tool) and writes up plain-text findings, already filtered for genuine significance.
    - **Draft**: a second call, with no tools, turns those findings into a subject line, structured alerts, and a complete inline-CSS HTML email, using [structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) so parsing never breaks.
 4. **`src/mailer.js`** sends the result via [Resend](https://resend.com), and optionally pings you by email whenever someone signs up, so you have a way to know the thing is actually being used.
+5. **Confirmation before running.** Signup sends a one-click confirm link (24h expiry); `/api/run` refuses to run for an unconfirmed email. It's the cheapest real defense against someone spamming the "run now" button with a fake or someone else's address once real API credit is on the line.
 
 ## A real bug, and why the architecture is split in two
 
@@ -50,8 +51,8 @@ Required: `ANTHROPIC_API_KEY`. Everything else in `.env.example` is optional and
 This is an MVP, built to prove the concept end to end, not a shipped product:
 
 - **No scheduling yet.** "Run now" is a manual trigger. A real cron job (Vercel Cron, or a scheduled job elsewhere) is the obvious next step.
-- **No auth.** Anyone who knows a signed-up email can trigger a run for it.
-- **Real delivery is limited to one inbox for now.** Resend's shared sandbox sender (`onboarding@resend.dev`) can only send to the account owner's own verified address. Sending the curated email to arbitrary subscribers needs a verified custom domain in Resend.
+- **Confirmation, not full auth.** Email confirmation stops anonymous spam of the run endpoint, but there's no login or session, anyone with a confirmed inbox's cooperation (or access to it) can still trigger a run.
+- **Real delivery is limited to one inbox for now.** Resend's shared sandbox sender (`onboarding@resend.dev`) can only send to the account owner's own verified address, and that includes confirmation emails. In practice, right now, only the owner's own signup can complete the confirm step. Sending to arbitrary subscribers needs a verified custom domain in Resend.
 - **Company autocomplete** uses Clearbit's free suggest endpoint and Google's favicon service. Both are free and unauthenticated, so no key management, but also no SLA.
 
 ## Stack
