@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   upsertUser,
   getUserByEmail,
+  listUsers,
   createConfirmationToken,
   confirmEmailByToken,
 } from "./src/store.js";
@@ -89,6 +90,36 @@ app.get("/api/confirm", async (req, res) => {
     );
 });
 
+// Shared by the manual "run now" button and the daily cron. Only actually
+// sends an email when the agent found something genuinely worth sending —
+// an empty scan stays silent instead of mailing a "nothing today" note.
+async function runAndMaybeSend(user) {
+  console.log(`[agent] running scan for ${user.email} (${user.industry})...`);
+  const result = await runAgentForUser(user);
+  console.log(
+    `[agent] done. ${result.alerts.length} alert(s), ${result.sourcesSearched.length} source(s) searched.`
+  );
+
+  let emailSent = false;
+  let emailError = null;
+  if (isEmailSendingConfigured() && result.alerts.length > 0) {
+    try {
+      await sendSignalEmail({
+        to: user.email,
+        subject: result.email_subject,
+        html: result.email_html,
+      });
+      emailSent = true;
+      console.log(`[mailer] sent to ${user.email}`);
+    } catch (err) {
+      emailError = err.message;
+      console.error("[mailer] failed:", err);
+    }
+  }
+
+  return { ...result, emailSent, emailError };
+}
+
 app.post("/api/run", async (req, res) => {
   try {
     const { email } = req.body;
@@ -103,34 +134,41 @@ app.post("/api/run", async (req, res) => {
         .json({ error: "Please confirm your email first — check your inbox for the link." });
     }
 
-    console.log(`[agent] running scan for ${user.email} (${user.industry})...`);
-    const result = await runAgentForUser(user);
-    console.log(
-      `[agent] done. ${result.alerts.length} alert(s), ${result.sourcesSearched.length} source(s) searched.`
-    );
-
-    let emailSent = false;
-    let emailError = null;
-    if (isEmailSendingConfigured()) {
-      try {
-        await sendSignalEmail({
-          to: user.email,
-          subject: result.email_subject,
-          html: result.email_html,
-        });
-        emailSent = true;
-        console.log(`[mailer] sent to ${user.email}`);
-      } catch (err) {
-        emailError = err.message;
-        console.error("[mailer] failed:", err);
-      }
-    }
-
-    res.json({ ok: true, result: { ...result, emailSent, emailError } });
+    const result = await runAndMaybeSend(user);
+    res.json({ ok: true, result });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || "The agent run failed." });
   }
+});
+
+// Vercel Cron hits this once a day (see vercel.json). Vercel attaches
+// `Authorization: Bearer $CRON_SECRET` automatically when CRON_SECRET is set
+// as an env var, so this rejects anyone else who finds the URL.
+app.get("/api/cron", async (req, res) => {
+  if (process.env.CRON_SECRET) {
+    const expected = `Bearer ${process.env.CRON_SECRET}`;
+    if (req.headers.authorization !== expected) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+  }
+
+  const users = await listUsers();
+  const confirmed = users.filter((u) => u.confirmed);
+  console.log(`[cron] running for ${confirmed.length} confirmed user(s)`);
+
+  const summary = [];
+  for (const user of confirmed) {
+    try {
+      const result = await runAndMaybeSend(user);
+      summary.push({ email: user.email, alerts: result.alerts.length, emailSent: result.emailSent });
+    } catch (err) {
+      console.error(`[cron] failed for ${user.email}:`, err);
+      summary.push({ email: user.email, error: err.message });
+    }
+  }
+
+  res.json({ ok: true, ranFor: confirmed.length, summary });
 });
 
 // Vercel imports `app` and handles the HTTP server itself; everywhere else
