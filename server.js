@@ -24,6 +24,22 @@ const PORT = process.env.PORT || 3002;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
+// Safe to expose: booleans only, never the actual secret values. Lets us
+// confirm what's configured in a given environment without spending
+// anything or guessing from error messages.
+app.get("/api/status", (req, res) => {
+  res.json({
+    mockAgent: process.env.MOCK_AGENT === "true",
+    anthropicConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
+    resendConfigured: isEmailSendingConfigured(),
+    ownerEmailConfigured: Boolean(process.env.OWNER_EMAIL),
+    cronSecretConfigured: Boolean(process.env.CRON_SECRET),
+    redisConfigured: Boolean(
+      process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+    ),
+  });
+});
+
 app.post("/api/signup", async (req, res) => {
   try {
     const { email, companiesToTrack, industry, signals, otherSignal } = req.body;
