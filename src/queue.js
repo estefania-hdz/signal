@@ -3,7 +3,14 @@ import { Client, Receiver } from "@upstash/qstash";
 
 let qstashClient;
 function getQstashClient() {
-  if (!qstashClient) qstashClient = new Client({ token: process.env.QSTASH_TOKEN });
+  if (!qstashClient) {
+    qstashClient = new Client({
+      token: process.env.QSTASH_TOKEN,
+      // Region-specific QStash instances (e.g. EU) reject tokens on the
+      // default/global endpoint — must point at the instance's own URL.
+      ...(process.env.QSTASH_URL ? { baseUrl: process.env.QSTASH_URL } : {}),
+    });
+  }
   return qstashClient;
 }
 
