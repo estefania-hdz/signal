@@ -11,7 +11,7 @@ Most "AI newsletter" tools just forward everything they find. The interesting pr
 ## How it works
 
 1. **Landing page** (`public/index.html`) collects an email, a free-text watch area ("AI enablement in fintech", "pre-seed agtech startups raising in EMEA"), optional specific companies to track (with autocomplete), and the kinds of signals that matter (launches, funding, hires, pricing, competitor moves, or your own).
-2. **`server.js`** is a small Express app: it saves signups to a JSON file and exposes a "run now" endpoint for the MVP (no cron yet, see Limitations).
+2. **`server.js`** is a small Express app: it saves signups to Upstash Redis and exposes a "run now" endpoint for the MVP (no cron yet, see Limitations). It runs as a normal Node process locally or on Render, and as a Vercel serverless function via `api/index.js` + `vercel.json`.
 3. **`src/agent.js`** does the actual work, in two separate Claude API calls:
    - **Research**: Claude searches the web (server-side `web_search` tool) and writes up plain-text findings, already filtered for genuine significance.
    - **Draft**: a second call, with no tools, turns those findings into a subject line, structured alerts, and a complete inline-CSS HTML email, using [structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) so parsing never breaks.
@@ -37,18 +37,26 @@ Required: `ANTHROPIC_API_KEY`. Everything else in `.env.example` is optional and
 | `OWNER_EMAIL` | No signup notification emails |
 | `MOCK_AGENT=true` | Skips the Anthropic API entirely and returns a canned result, useful for testing the rest of the pipeline (UI, signup, real email delivery) for free |
 
+`UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are required, signups have nowhere to be saved without them. Get a free database at [upstash.com](https://upstash.com), or provision one from Vercel's "Storage" tab if deploying there.
+
+## Deploying
+
+**Vercel:** import the repo, it picks up `vercel.json` and `api/index.js` automatically. Provision an Upstash database from the "Storage" tab (fills in the `UPSTASH_*` env vars for you), then add `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, and `OWNER_EMAIL` yourself.
+
+**Render (or anywhere that runs a normal Node process):** connect the repo as a Web Service, build command `npm install`, start command `npm start`, add the same env vars. No code changes needed either way.
+
 ## Known limitations
 
 This is an MVP, built to prove the concept end to end, not a shipped product:
 
-- **No scheduling yet.** "Run now" is a manual trigger. A real cron job (or a scheduled serverless function) is the obvious next step.
-- **Storage is a JSON file**, not a database. Fine for a demo, not for real signups at any scale, and it won't persist across redeploys on most free hosting.
+- **No scheduling yet.** "Run now" is a manual trigger. A real cron job (Vercel Cron, or a scheduled job elsewhere) is the obvious next step.
 - **No auth.** Anyone who knows a signed-up email can trigger a run for it.
+- **Real delivery is limited to one inbox for now.** Resend's shared sandbox sender (`onboarding@resend.dev`) can only send to the account owner's own verified address. Sending the curated email to arbitrary subscribers needs a verified custom domain in Resend.
 - **Company autocomplete** uses Clearbit's free suggest endpoint and Google's favicon service. Both are free and unauthenticated, so no key management, but also no SLA.
 
 ## Stack
 
-Plain HTML/CSS/JS on the frontend (no build step), Node + Express on the backend, the Claude API (`claude-opus-4-8`, adaptive thinking, server-side web search, structured outputs) for the actual agent, Resend for email.
+Plain HTML/CSS/JS on the frontend (no build step), Node + Express on the backend, Upstash Redis for storage, the Claude API (`claude-opus-4-8`, adaptive thinking, server-side web search, structured outputs) for the actual agent, Resend for email.
 
 ---
 

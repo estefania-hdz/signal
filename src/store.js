@@ -1,31 +1,27 @@
-import { readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import "dotenv/config";
+import { Redis } from "@upstash/redis";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const USERS_PATH = path.join(__dirname, "..", "data", "users.json");
+const USERS_INDEX_KEY = "signal:users:index";
 
-async function readUsers() {
-  try {
-    const raw = await readFile(USERS_PATH, "utf-8");
-    return JSON.parse(raw);
-  } catch (err) {
-    if (err.code === "ENOENT") return [];
-    throw err;
-  }
+let redis;
+function getRedis() {
+  if (!redis) redis = Redis.fromEnv();
+  return redis;
 }
 
-async function writeUsers(users) {
-  await writeFile(USERS_PATH, JSON.stringify(users, null, 2) + "\n", "utf-8");
+function userKey(email) {
+  return `signal:user:${email.toLowerCase()}`;
 }
 
 export async function listUsers() {
-  return readUsers();
+  const emails = await getRedis().smembers(USERS_INDEX_KEY);
+  if (!emails.length) return [];
+  const users = await Promise.all(emails.map((email) => getRedis().get(userKey(email))));
+  return users.filter(Boolean);
 }
 
 export async function getUserByEmail(email) {
-  const users = await readUsers();
-  return users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  return getRedis().get(userKey(email));
 }
 
 export async function upsertUser({
@@ -35,26 +31,19 @@ export async function upsertUser({
   signals,
   otherSignal,
 }) {
-  const users = await readUsers();
-  const existingIndex = users.findIndex(
-    (u) => u.email.toLowerCase() === email.toLowerCase()
-  );
+  const key = userKey(email);
+  const existing = await getRedis().get(key);
   const record = {
     email,
     companiesToTrack: Array.isArray(companiesToTrack) ? companiesToTrack : [],
     industry,
     signals,
     otherSignal: otherSignal || "",
-    createdAt:
-      existingIndex >= 0 ? users[existingIndex].createdAt : new Date().toISOString(),
+    createdAt: existing?.createdAt || new Date().toISOString(),
   };
 
-  if (existingIndex >= 0) {
-    users[existingIndex] = record;
-  } else {
-    users.push(record);
-  }
+  await getRedis().set(key, record);
+  await getRedis().sadd(USERS_INDEX_KEY, email.toLowerCase());
 
-  await writeUsers(users);
   return record;
 }

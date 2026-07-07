@@ -95,6 +95,12 @@ app.post("/api/run", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Signal running at http://localhost:${PORT}`);
-});
+// Vercel imports `app` and handles the HTTP server itself; everywhere else
+// (local dev, Render) we need to listen on a port ourselves.
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Signal running at http://localhost:${PORT}`);
+  });
+}
+
+export default app;
