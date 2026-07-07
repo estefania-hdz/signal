@@ -528,6 +528,12 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'The run failed');
 
+      if (data.queued) {
+        runStatus.textContent = "Started — this runs in the background now. Check " + currentEmail + " in a minute or two.";
+        runStatus.className = 'status ok';
+        return;
+      }
+
       const { result } = data;
       previewFrame.srcdoc = result.email_html;
       previewMeta.textContent =

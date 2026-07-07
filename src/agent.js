@@ -121,15 +121,13 @@ function buildMockResult(user) {
 }
 
 /**
- * Runs one scan for a single subscriber: search, filter, and draft the email.
- * @param {{ email: string, industry: string, signals: string[] }} user
- * @returns {Promise<{ email_subject: string, alerts: object[], email_html: string, sourcesSearched: object[], usage: object }>}
+ * Phase 1: search and filter. Kept as its own function (rather than folded
+ * into one long call) so it can run as a single, independently-timed step —
+ * on Vercel's free tier a serverless function is killed after 60s, and
+ * research + draft combined can run longer than that.
+ * @returns {Promise<{ findingsText: string, sourcesSearched: object[] }>}
  */
-export async function runAgentForUser(user) {
-  if (process.env.MOCK_AGENT === "true") {
-    return buildMockResult(user);
-  }
-
+export async function runResearchPhase(user) {
   const researchParams = {
     model: MODEL,
     max_tokens: 4000,
@@ -139,7 +137,7 @@ export async function runAgentForUser(user) {
       {
         type: "web_search_20260209",
         name: "web_search",
-        max_uses: 6,
+        max_uses: 4,
       },
     ],
   };
@@ -159,7 +157,7 @@ export async function runAgentForUser(user) {
   // Server-side web_search can hit its internal round limit (pause_turn).
   // Re-send to let it continue rather than treating that as done.
   let guard = 0;
-  while (researchResponse.stop_reason === "pause_turn" && guard < 3) {
+  while (researchResponse.stop_reason === "pause_turn" && guard < 2) {
     researchMessages = [
       ...researchMessages,
       { role: "assistant", content: researchResponse.content },
@@ -190,6 +188,15 @@ export async function runAgentForUser(user) {
     throw new Error("The research step produced no findings text to draft from.");
   }
 
+  return { findingsText, sourcesSearched };
+}
+
+/**
+ * Phase 2: draft. No tools, so this alone is fast — safely under Vercel's
+ * 60s limit even when phase 1 already used most of its own budget.
+ * @returns {Promise<{ email_subject: string, alerts: object[], email_html: string }>}
+ */
+export async function runDraftPhase(user, findingsText) {
   const draftResponse = await streamToFinalMessage({
     model: MODEL,
     max_tokens: 4000,
@@ -212,13 +219,25 @@ export async function runAgentForUser(user) {
     );
   }
 
-  const parsed = JSON.parse(textBlock.text);
+  return JSON.parse(textBlock.text);
+}
 
-  return {
-    ...parsed,
-    sourcesSearched,
-    usage: { research: researchResponse.usage, draft: draftResponse.usage },
-  };
+/**
+ * Runs both phases in one call. Fine for mock mode (instant) and for
+ * platforms without a hard function-duration ceiling (local dev, Render) —
+ * not used on Vercel for real (non-mock) runs, see src/queue.js.
+ * @param {{ email: string, industry: string, signals: string[] }} user
+ * @returns {Promise<{ email_subject: string, alerts: object[], email_html: string, sourcesSearched: object[] }>}
+ */
+export async function runAgentForUser(user) {
+  if (process.env.MOCK_AGENT === "true") {
+    return buildMockResult(user);
+  }
+
+  const { findingsText, sourcesSearched } = await runResearchPhase(user);
+  const parsed = await runDraftPhase(user, findingsText);
+
+  return { ...parsed, sourcesSearched };
 }
 
 async function streamToFinalMessage(params) {

@@ -9,20 +9,36 @@ import {
   createConfirmationToken,
   confirmEmailByToken,
 } from "./src/store.js";
-import { runAgentForUser } from "./src/agent.js";
+import { runAgentForUser, runResearchPhase, runDraftPhase } from "./src/agent.js";
 import {
   sendSignalEmail,
   sendSignupNotification,
   sendConfirmationEmail,
   isEmailSendingConfigured,
 } from "./src/mailer.js";
+import {
+  isQueueConfigured,
+  enqueueResearch,
+  enqueueDraft,
+  verifyQStashRequest,
+} from "./src/queue.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-app.use(express.json());
+// Keep the raw bytes alongside the parsed body — QStash's signature check
+// needs the exact original payload, not a re-serialized copy of req.body.
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf.toString(); } }));
 app.use(express.static(path.join(__dirname, "public")));
+
+// Vercel's free tier kills a serverless function after 60s. A real
+// research + draft run can take longer than that combined, so on Vercel
+// (with the real API, not mock) each phase runs as its own QStash-triggered
+// request instead of one long request the caller waits on.
+function shouldUseQueue() {
+  return Boolean(process.env.VERCEL) && process.env.MOCK_AGENT !== "true" && isQueueConfigured();
+}
 
 // Safe to expose: booleans only, never the actual secret values. Lets us
 // confirm what's configured in a given environment without spending
@@ -37,6 +53,8 @@ app.get("/api/status", (req, res) => {
     redisConfigured: Boolean(
       process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
     ),
+    queueConfigured: isQueueConfigured(),
+    usingQueueForRuns: shouldUseQueue(),
   });
 });
 
@@ -150,6 +168,13 @@ app.post("/api/run", async (req, res) => {
         .json({ error: "Please confirm your email first — check your inbox for the link." });
     }
 
+    if (shouldUseQueue()) {
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      await enqueueResearch({ email: user.email, baseUrl });
+      console.log(`[queue] research enqueued for ${user.email}`);
+      return res.json({ ok: true, queued: true });
+    }
+
     const result = await runAndMaybeSend(user);
     res.json({ ok: true, result });
   } catch (err) {
@@ -173,6 +198,18 @@ app.get("/api/cron", async (req, res) => {
   const confirmed = users.filter((u) => u.confirmed);
   console.log(`[cron] running for ${confirmed.length} confirmed user(s)`);
 
+  if (shouldUseQueue()) {
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    for (const user of confirmed) {
+      try {
+        await enqueueResearch({ email: user.email, baseUrl });
+      } catch (err) {
+        console.error(`[cron] failed to enqueue ${user.email}:`, err);
+      }
+    }
+    return res.json({ ok: true, queued: confirmed.length });
+  }
+
   const summary = [];
   for (const user of confirmed) {
     try {
@@ -185,6 +222,61 @@ app.get("/api/cron", async (req, res) => {
   }
 
   res.json({ ok: true, ranFor: confirmed.length, summary });
+});
+
+// QStash calls these back; each is its own short-lived request so neither
+// one risks hitting Vercel's per-invocation time limit.
+app.post("/api/worker/research", async (req, res) => {
+  try {
+    await verifyQStashRequest(req);
+  } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+
+  const { email } = req.body;
+  try {
+    const user = await getUserByEmail(email);
+    if (!user) throw new Error(`No signup found for ${email}`);
+
+    console.log(`[worker/research] running for ${email}...`);
+    const { findingsText, sourcesSearched } = await runResearchPhase(user);
+    console.log(`[worker/research] done for ${email}, ${sourcesSearched.length} source(s)`);
+
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    await enqueueDraft({ email, findingsText, sourcesSearched, baseUrl });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`[worker/research] failed for ${email}:`, err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/worker/draft", async (req, res) => {
+  try {
+    await verifyQStashRequest(req);
+  } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+
+  const { email, findingsText, sourcesSearched } = req.body;
+  try {
+    const user = await getUserByEmail(email);
+    if (!user) throw new Error(`No signup found for ${email}`);
+
+    console.log(`[worker/draft] running for ${email}...`);
+    const parsed = await runDraftPhase(user, findingsText);
+    console.log(`[worker/draft] done for ${email}, ${parsed.alerts.length} alert(s)`);
+
+    if (isEmailSendingConfigured() && parsed.alerts.length > 0) {
+      await sendSignalEmail({ to: email, subject: parsed.email_subject, html: parsed.email_html });
+      console.log(`[mailer] sent to ${email}`);
+    }
+
+    res.json({ ok: true, sourcesSearched });
+  } catch (err) {
+    console.error(`[worker/draft] failed for ${email}:`, err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Vercel imports `app` and handles the HTTP server itself; everywhere else
