@@ -1,0 +1,17 @@
+{
+  "name": "signal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Signal — an agentic market monitoring assistant that watches a niche, filters the noise, and emails a short curated brief.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "resend": "^6.17.1"
+  }
+}

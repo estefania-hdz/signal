@@ -1,0 +1,23 @@
+[
+  {
+    "email": "test@example.com",
+    "companiesToTrack": [
+      { "name": "Ramp", "domain": "ramp.com" },
+      { "name": "Brex", "domain": "brex.com" }
+    ],
+    "industry": "AI enablement in fintech",
+    "signals": ["product_launches", "funding_news"],
+    "otherSignal": "",
+    "createdAt": "2026-07-07T00:00:00.000Z"
+  },
+  {
+    "email": "estefaniahbarajas@gmail.com",
+    "companiesToTrack": [
+      { "name": "Strava", "domain": "strava.com" }
+    ],
+    "industry": "new releases en startups de robotics en emea",
+    "signals": ["product_launches"],
+    "otherSignal": "",
+    "createdAt": "2026-07-07T12:33:47.334Z"
+  }
+]

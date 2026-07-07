@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Signal — a market-monitoring agent that reads the noise so you don't have to</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1c1b18;
+    --paper: #FAF6EE;
+    --paper-dim: #F0EADB;
+    --line: #E3DBC7;
+    --teal: #1F6F63;
+    --teal-dark: #16504A;
+    --rust: #C1602A;
+    --muted: #6B6656;
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(28,27,24,0.08);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, sans-serif;
+    line-height: 1.5;
+  }
+  h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 600; margin: 0; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+
+  header.hero {
+    padding: 72px 0 56px;
+    border-bottom: 1px solid var(--line);
+  }
+  .kicker {
+    display: inline-block;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--teal-dark);
+    background: rgba(31,111,99,0.10);
+    padding: 5px 12px;
+    border-radius: 999px;
+    margin-bottom: 20px;
+  }
+  h1 { font-size: 42px; line-height: 1.12; letter-spacing: -0.01em; }
+  h1 em { color: var(--rust); font-style: italic; }
+  .lede {
+    font-size: 18px;
+    color: var(--muted);
+    margin-top: 18px;
+    max-width: 56ch;
+  }
+
+  section { padding: 44px 0; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: none; }
+
+  .how {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-top: 24px;
+  }
+  .how-step {
+    background: var(--paper-dim);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .how-step .num {
+    font-family: 'Fraunces', serif;
+    font-size: 22px;
+    color: var(--rust);
+    display: block;
+    margin-bottom: 8px;
+  }
+  .how-step p { margin: 0; font-size: 14.5px; color: var(--muted); }
+
+  form { margin-top: 28px; display: flex; flex-direction: column; gap: 20px; }
+  label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  input[type="email"], input[type="text"], textarea {
+    width: 100%;
+    padding: 13px 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-size: 15px;
+    font-family: inherit;
+    background: #fff;
+    color: var(--ink);
+  }
+  textarea {
+    resize: vertical;
+    min-height: 76px;
+    line-height: 1.5;
+  }
+  input:focus, textarea:focus { outline: 2px solid var(--teal); outline-offset: 1px; }
+  .hint { font-size: 13px; color: var(--muted); margin-top: 6px; }
+
+  .checks {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 14.5px;
+  }
+  .check input { width: 16px; height: 16px; accent-color: var(--teal); }
+  .check.checked { border-color: var(--teal); background: rgba(31,111,99,0.06); }
+
+  .other-signal-input { display: none; margin-top: 10px; }
+  .other-signal-input.visible { display: block; }
+
+  .company-field { position: relative; }
+  .company-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 20;
+  }
+  .company-dropdown.open { display: block; }
+  .company-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .company-option:hover, .company-option.active { background: var(--paper-dim); }
+  .company-option img { width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0; }
+  .company-option .domain { color: var(--muted); font-size: 12.5px; margin-left: 4px; }
+
+  .optional-label { font-weight: 400; color: var(--muted); }
+
+  .company-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 8px 6px 10px;
+    font-size: 13.5px;
+  }
+  .chip img { width: 15px; height: 15px; border-radius: 3px; }
+  .chip button {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 2px;
+    font-family: inherit;
+  }
+  .chip button:hover { color: var(--rust); }
+
+  button.primary {
+    background: var(--teal);
+    color: #fff;
+    border: none;
+    padding: 14px 22px;
+    border-radius: 10px;
+    font-size: 15.5px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s ease;
+  }
+  button.primary:hover { background: var(--teal-dark); }
+  button.primary:disabled { opacity: 0.55; cursor: default; }
+
+  button.secondary {
+    background: transparent;
+    color: var(--teal-dark);
+    border: 1px solid var(--teal);
+    padding: 13px 20px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button.secondary:hover { background: rgba(31,111,99,0.08); }
+
+  .status { font-size: 14px; margin-top: 4px; }
+  .status.ok { color: var(--teal-dark); }
+  .status.err { color: var(--rust); }
+
+  #run-area { display: none; margin-top: 14px; }
+  #run-area.visible { display: block; }
+
+  #preview-wrap { display: none; margin-top: 22px; }
+  #preview-wrap.visible { display: block; }
+  #preview-frame {
+    width: 100%;
+    height: 640px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: #fff;
+    box-shadow: var(--shadow);
+  }
+  #preview-meta {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 10px;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid rgba(31,111,99,0.25);
+    border-top-color: var(--teal);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin-right: 8px;
+    vertical-align: -2px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  footer { padding: 32px 0 64px; font-size: 13px; color: var(--muted); }
+  footer a {
+    color: var(--teal-dark);
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(31,111,99,0.35);
+  }
+  footer a:hover { border-bottom-color: var(--teal-dark); }
+
+  @media (max-width: 600px) {
+    h1 { font-size: 32px; }
+    .how { grid-template-columns: 1fr; }
+    .checks { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <span class="kicker">Signal · market monitoring agent</span>
+      <h1>An agent that watches your space, <em>so your Monday brief writes itself.</em></h1>
+      <p class="lede">Tell Signal what you're tracking. Once a day, it searches the web, throws out the noise, and drops a short, human email with the 3 or 4 things that actually matter.</p>
+    </header>
+
+    <section>
+      <h2>How it works</h2>
+      <div class="how">
+        <div class="how-step"><span class="num">01</span><p>You tell it your industry and what kind of moves you care about — launches, funding, hires, pricing, competitors.</p></div>
+        <div class="how-step"><span class="num">02</span><p>It searches the web, then judges what's genuinely worth your time versus what's just noise.</p></div>
+        <div class="how-step"><span class="num">03</span><p>You get a short, curated email. Three or four things, never a wall of links.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Set up your watch</h2>
+      <form id="signup-form">
+        <div>
+          <label for="email">Your email</label>
+          <input type="email" id="email" name="email" placeholder="you@company.com" required />
+        </div>
+
+        <div>
+          <label for="industry">What are you watching?</label>
+          <textarea id="industry" name="industry" rows="3" placeholder='e.g. "Keep an eye on new product releases from companies in my industry" or "Series A healthcare startups raising in EMEA"' required></textarea>
+          <p class="hint">Free text, as short or as long as you need. Broad theme, a specific niche, whatever you'd tell a sharp analyst to go look into.</p>
+        </div>
+
+        <div class="company-field">
+          <label for="company-input">Companies to track <span class="optional-label">(optional)</span></label>
+          <input type="text" id="company-input" placeholder="e.g. Stripe, Plaid — or leave blank to watch the whole space" autocomplete="off" />
+          <div id="company-dropdown" class="company-dropdown"></div>
+          <div id="company-chips" class="company-chips"></div>
+          <p class="hint">Add names if you already know who to track. Skip it if you want Signal to also surface companies you don't know about yet.</p>
+        </div>
+
+        <div>
+          <label>What kind of signals matter to you?</label>
+          <div class="checks">
+            <label class="check"><input type="checkbox" name="signals" value="product_launches" /> New product launches</label>
+            <label class="check"><input type="checkbox" name="signals" value="competitor_moves" /> Competitor moves</label>
+            <label class="check"><input type="checkbox" name="signals" value="key_hires" /> Key hires</label>
+            <label class="check"><input type="checkbox" name="signals" value="funding_news" /> Funding news</label>
+            <label class="check"><input type="checkbox" name="signals" value="pricing_changes" /> Pricing changes</label>
+            <label class="check"><input type="checkbox" name="signals" value="other" id="signal-other" /> Other</label>
+          </div>
+          <input type="text" id="other-signal-text" class="other-signal-input" placeholder="Describe what you want to track" />
+        </div>
+
+        <button type="submit" class="primary">Start watching</button>
+        <p id="signup-status" class="status"></p>
+      </form>
+
+      <div id="run-area">
+        <button id="run-btn" class="secondary">Run now — see what Signal finds</button>
+        <p id="run-status" class="status"></p>
+
+        <div id="preview-wrap">
+          <iframe id="preview-frame" title="Email preview" sandbox=""></iframe>
+          <p id="preview-meta"></p>
+        </div>
+      </div>
+    </section>
+
+    <footer>Signal · MVP demo. Built with ❤️ by <a href="https://www.linkedin.com/in/estefaniahdz/" target="_blank" rel="noopener">Estefania Hernandez</a></footer>
+  </div>
+
+<script>
+  const signupForm = document.getElementById('signup-form');
+  const signupStatus = document.getElementById('signup-status');
+  const runArea = document.getElementById('run-area');
+  const runBtn = document.getElementById('run-btn');
+  const runStatus = document.getElementById('run-status');
+  const previewWrap = document.getElementById('preview-wrap');
+  const previewFrame = document.getElementById('preview-frame');
+  const previewMeta = document.getElementById('preview-meta');
+
+  document.querySelectorAll('.check').forEach((label) => {
+    const input = label.querySelector('input');
+    const sync = () => label.classList.toggle('checked', input.checked);
+    input.addEventListener('change', sync);
+    sync();
+  });
+
+  // --- "Other" signal type: reveal a free-text field ---
+  const otherCheckbox = document.getElementById('signal-other');
+  const otherSignalText = document.getElementById('other-signal-text');
+  otherCheckbox.addEventListener('change', () => {
+    otherSignalText.classList.toggle('visible', otherCheckbox.checked);
+    if (!otherCheckbox.checked) otherSignalText.value = '';
+  });
+
+  // --- Companies to track: multi-select autocomplete (name + logo), chips ---
+  const companyInput = document.getElementById('company-input');
+  const companyDropdown = document.getElementById('company-dropdown');
+  const companyChips = document.getElementById('company-chips');
+  let companiesToTrack = [];
+
+  function closeDropdown() {
+    companyDropdown.classList.remove('open');
+    companyDropdown.innerHTML = '';
+  }
+
+  function renderChips() {
+    companyChips.innerHTML = '';
+    companiesToTrack.forEach((c, i) => {
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      const img = c.domain
+        ? '<img src="https://www.google.com/s2/favicons?domain=' + encodeURIComponent(c.domain) + '&sz=64" alt="" />'
+        : '';
+      chip.innerHTML = img + '<span>' + c.name + '</span>';
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.textContent = '×';
+      removeBtn.setAttribute('aria-label', 'Remove ' + c.name);
+      removeBtn.addEventListener('click', () => {
+        companiesToTrack.splice(i, 1);
+        renderChips();
+      });
+      chip.appendChild(removeBtn);
+      companyChips.appendChild(chip);
+    });
+  }
+
+  function addCompany(name, domain) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const alreadyAdded = companiesToTrack.some(
+      (c) => c.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (alreadyAdded) return;
+    companiesToTrack.push({ name: trimmed, domain: domain || '' });
+    renderChips();
+  }
+
+  function renderCompanyOptions(companies) {
+    companyDropdown.innerHTML = '';
+    if (!companies.length) {
+      closeDropdown();
+      return;
+    }
+    companies.slice(0, 6).forEach((c) => {
+      const row = document.createElement('div');
+      row.className = 'company-option';
+      row.innerHTML =
+        '<img src="https://www.google.com/s2/favicons?domain=' + encodeURIComponent(c.domain) + '&sz=64" alt="" />' +
+        '<span>' + c.name + '<span class="domain">' + c.domain + '</span></span>';
+      row.addEventListener('click', () => {
+        addCompany(c.name, c.domain);
+        companyInput.value = '';
+        closeDropdown();
+        companyInput.focus();
+      });
+      companyDropdown.appendChild(row);
+    });
+    companyDropdown.classList.add('open');
+  }
+
+  let companyDebounce;
+  companyInput.addEventListener('input', () => {
+    const query = companyInput.value.trim();
+    clearTimeout(companyDebounce);
+    if (query.length < 2) {
+      closeDropdown();
+      return;
+    }
+    companyDebounce = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          'https://autocomplete.clearbit.com/v1/companies/suggest?query=' + encodeURIComponent(query)
+        );
+        if (!res.ok) throw new Error('lookup failed');
+        const companies = await res.json();
+        renderCompanyOptions(companies);
+      } catch {
+        // Autocomplete is a nice-to-have; if it's unreachable, Enter still
+        // adds whatever was typed as a plain (logo-less) chip.
+        closeDropdown();
+      }
+    }, 250);
+  });
+
+  // No match, or you just want to type a name and move on — Enter adds it.
+  companyInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (companyInput.value.trim()) {
+      addCompany(companyInput.value, '');
+      companyInput.value = '';
+    }
+    closeDropdown();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.company-field')) closeDropdown();
+  });
+
+  let currentEmail = null;
+
+  signupForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    signupStatus.textContent = '';
+    signupStatus.className = 'status';
+
+    const email = document.getElementById('email').value.trim();
+    const industry = document.getElementById('industry').value.trim();
+    const signals = Array.from(
+      signupForm.querySelectorAll('input[name="signals"]:checked')
+    ).map((el) => el.value);
+    const otherSignal = otherSignalText.value.trim();
+
+    if (signals.length === 0) {
+      signupStatus.textContent = 'Pick at least one kind of signal.';
+      signupStatus.className = 'status err';
+      return;
+    }
+
+    if (signals.includes('other') && !otherSignal) {
+      signupStatus.textContent = "Tell us what \"other\" means for you.";
+      signupStatus.className = 'status err';
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          companiesToTrack,
+          industry,
+          signals,
+          otherSignal,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Signup failed');
+
+      currentEmail = email;
+      signupStatus.textContent = "You're set. Signal will watch " + industry + ".";
+      signupStatus.className = 'status ok';
+      runArea.classList.add('visible');
+      previewWrap.classList.remove('visible');
+      runStatus.textContent = '';
+    } catch (err) {
+      signupStatus.textContent = err.message;
+      signupStatus.className = 'status err';
+    }
+  });
+
+  runBtn.addEventListener('click', async () => {
+    if (!currentEmail) return;
+    runBtn.disabled = true;
+    runStatus.innerHTML = '<span class="spinner"></span>Searching, filtering, drafting your email — this can take a minute...';
+    runStatus.className = 'status';
+    previewWrap.classList.remove('visible');
+
+    try {
+      const res = await fetch('/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: currentEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'The run failed');
+
+      const { result } = data;
+      previewFrame.srcdoc = result.email_html;
+      previewMeta.textContent =
+        result.alerts.length + ' alert(s) selected out of ' +
+        result.sourcesSearched.length + ' source(s) searched. Subject: "' +
+        result.email_subject + '"';
+      previewWrap.classList.add('visible');
+      if (result.emailSent) {
+        runStatus.textContent = 'Done — also sent for real to ' + currentEmail + '.';
+        runStatus.className = 'status ok';
+      } else if (result.emailError) {
+        runStatus.textContent = 'Preview ready, but the real send failed: ' + result.emailError;
+        runStatus.className = 'status err';
+      } else {
+        runStatus.textContent = 'Done (preview only — no email service connected yet).';
+        runStatus.className = 'status ok';
+      }
+    } catch (err) {
+      runStatus.textContent = err.message;
+      runStatus.className = 'status err';
+    } finally {
+      runBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
