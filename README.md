@@ -11,10 +11,10 @@ Most "AI newsletter" tools just forward everything they find. The interesting pr
 ## How it works
 
 1. **Landing page** (`public/index.html`) collects an email, a free-text watch area ("AI enablement in fintech", "pre-seed agtech startups raising in EMEA"), optional specific companies to track (with autocomplete), and the kinds of signals that matter (launches, funding, hires, pricing, competitor moves, or your own).
-2. **`server.js`** is a small Express app: it saves signups to Upstash Redis, exposes a manual "run now" endpoint, and a `/api/cron` endpoint that Vercel Cron hits once a day (see `vercel.json`) to run every confirmed subscriber automatically. It runs as a normal Node process locally or on Render, and as a Vercel serverless function via `api/index.js` + `vercel.json`.
+2. **`server.js`** is a small Express app: it saves signups to Upstash Redis, exposes a manual "run now" endpoint, and a `/api/cron` endpoint meant to be hit once a day by an external scheduler to run every confirmed subscriber automatically (see Deploying). It's a normal long-running Node process — no serverless function to configure.
 3. **`src/agent.js`** does the actual work, in two separate Claude API calls:
-   - **Research**: Claude searches the web (server-side `web_search` tool) and writes up plain-text findings, already filtered for genuine significance.
-   - **Draft**: a second call, with no tools, turns those findings into a subject line, structured alerts, and a complete inline-CSS HTML email, using [structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) so parsing never breaks.
+   - **Research**: Claude (Sonnet — see below) searches the web (server-side `web_search` tool) and writes up plain-text findings, already filtered for genuine significance.
+   - **Draft**: a second call to Claude Opus, with no tools, turns those findings into a subject line, structured alerts, and a complete inline-CSS HTML email, using [structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) so parsing never breaks.
 4. **`src/mailer.js`** sends the result via [Resend](https://resend.com), and optionally pings you by email whenever someone signs up, so you have a way to know the thing is actually being used.
 5. **Confirmation before running.** Signup sends a one-click confirm link (24h expiry); `/api/run` refuses to run for an unconfirmed email. It's the cheapest real defense against someone spamming the "run now" button with a fake or someone else's address once real API credit is on the line.
 6. **Silent when there's nothing to say.** Both the manual and cron paths only send an email if the research phase actually found something significant — an empty scan doesn't mail a "nothing today" placeholder, it just doesn't send.
@@ -22,6 +22,8 @@ Most "AI newsletter" tools just forward everything they find. The interesting pr
 ## A real bug, and why the architecture is split in two
 
 The first version made one API call: web search and structured JSON output together. It worked, but a routine test run took over 9 minutes. I isolated it by timing each piece in increasing combination (bare call, +thinking, +web search, +web search +structured output) and found the last combination alone added roughly 6x the latency of web search by itself, even on a trivial query. Splitting research and drafting into two calls fixed it. It's a small example of the kind of thing that doesn't show up until you actually run the thing and look at the numbers.
+
+I originally tried deploying this on Vercel, whose free tier kills a serverless function after 60 seconds. Even split in two, a real multi-round web search with Opus routinely ran longer than that. I tried a faster model for the research phase (Sonnet) and a tighter search budget before concluding the actual fix was the platform, not the code: Render runs this as a normal long-lived process with no such ceiling. Research stayed on Sonnet anyway — it's faster for this tool-heavy, round-trip-bound step, and the phase that actually needs Opus-level judgment (deciding what's significant, writing well) is the drafting call, which makes no tool calls and is fast regardless of model.
 
 ## Running it locally
 
@@ -38,15 +40,17 @@ Required: `ANTHROPIC_API_KEY`. Everything else in `.env.example` is optional and
 | `RESEND_API_KEY` | Signal only generates the email HTML, nothing gets sent |
 | `OWNER_EMAIL` | No signup notification emails |
 | `MOCK_AGENT=true` | Skips the Anthropic API entirely and returns a canned result, useful for testing the rest of the pipeline (UI, signup, real email delivery) for free |
-| `CRON_SECRET` | `/api/cron` runs for anyone who requests it, instead of only Vercel's own scheduled trigger |
+| `CRON_SECRET` | `/api/cron` runs for anyone who requests it, instead of only your scheduler |
 
-`UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are required, signups have nowhere to be saved without them. Get a free database at [upstash.com](https://upstash.com), or provision one from Vercel's "Storage" tab if deploying there.
+`UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are required, signups have nowhere to be saved without them. Get a free database at [upstash.com](https://upstash.com).
 
 ## Deploying
 
-**Vercel:** import the repo, it picks up `vercel.json` and `api/index.js` automatically, including the daily cron (`0 13 * * *` UTC by default, edit `vercel.json` to change it). Provision an Upstash database from the "Storage" tab (fills in the `UPSTASH_*` env vars for you), then add `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `OWNER_EMAIL`, and a random `CRON_SECRET` yourself.
+**Render** (or anywhere that runs a normal Node process — a plain VM, Railway, Fly.io): connect the repo as a Web Service, build command `npm install`, start command `npm start`, add the env vars from `.env.example`.
 
-**Render (or anywhere that runs a normal Node process):** connect the repo as a Web Service, build command `npm install`, start command `npm start`, add the same env vars. No code changes needed for the app itself, but `vercel.json`'s cron config is Vercel-specific — elsewhere, point any scheduler (Render's own Cron Job service, GitHub Actions, cron-job.org) at `GET /api/cron` with the `Authorization: Bearer $CRON_SECRET` header once a day.
+For the daily automatic run, point any scheduler at `GET /api/cron` with an `Authorization: Bearer $CRON_SECRET` header once a day — Render's own Cron Job service, a GitHub Actions scheduled workflow, or a free service like cron-job.org all work.
+
+I deliberately didn't use a serverless platform (Vercel, Netlify) for this: their free tiers kill a function after 60 seconds, and a real multi-round web search routinely runs longer than that even split across two calls. See the note above.
 
 ## Known limitations
 
@@ -58,7 +62,7 @@ This is an MVP, built to prove the concept end to end, not a shipped product:
 
 ## Stack
 
-Plain HTML/CSS/JS on the frontend (no build step), Node + Express on the backend, Upstash Redis for storage, the Claude API (`claude-opus-4-8`, adaptive thinking, server-side web search, structured outputs) for the actual agent, Resend for email.
+Plain HTML/CSS/JS on the frontend (no build step), Node + Express on the backend, Upstash Redis for storage, the Claude API (Sonnet for research with adaptive thinking + server-side web search, Opus for drafting with structured outputs) for the actual agent, Resend for email, deployed on Render.
 
 ---
 
