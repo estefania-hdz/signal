@@ -79,6 +79,8 @@ Your job:
 2. Judge each thing you find with real editorial judgment. Most of what you find is noise: routine blog posts, rehashed press releases, minor version bumps, content-marketing SEO bait. Discard all of that. Keep only what a sharp, busy operator in this exact space would actually want to know about today.
 3. Pick at most 3-4 items: the genuinely significant ones. If you find fewer than 3 truly significant items, report fewer. Never pad the list with filler just to hit a number. If you find nothing genuinely significant, say so plainly.
 
+If a search call ever errors or you run out of search budget partway through, that's not a failure: write up whatever genuinely significant findings you've already gathered from the searches that did succeed. Only say you found nothing if you truly found nothing worth reporting — never discard real findings you already have just because a later search didn't go through.
+
 When you're done searching, write up your findings in plain text, one item at a time. For each item include: the headline, a 2-3 sentence summary, why it specifically matters to this subscriber given their watch area, its category, and the exact source URL you found it at.
 
 Only report things you actually found via search just now. Never invent a source URL — every URL must come from a page you searched.`;
@@ -143,7 +145,9 @@ export async function runResearchPhase(user) {
       {
         type: "web_search_20260209",
         name: "web_search",
-        max_uses: 4,
+        // Render has no serverless time ceiling, so this can be generous —
+        // it was cut to 4 only to try to fit Vercel's 60s function limit.
+        max_uses: 8,
       },
     ],
   };
